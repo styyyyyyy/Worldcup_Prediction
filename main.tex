@@ -1,0 +1,597 @@
+% ---------------------------------------------------------------------------
+% main.tex
+% Predicting the 2026 FIFA World Cup champion from the quarterfinal stage:
+% a conditional Poisson score model with Monte Carlo simulation.
+%
+% Compiles with pdfLaTeX on Overleaf. No external images, no shell-escape.
+% Companion files: algorithm.tex, model_notes.tex, references.bib,
+%                  data_template.csv, simulate_worldcup.py, README.md
+% ---------------------------------------------------------------------------
+\documentclass[11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}   % listed for completeness; no external images are used
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Expect}{\mathbb{E}}
+\newcommand{\Ind}{\mathbf{1}}
+
+\title{Predicting the 2026 FIFA World Cup Champion from the Quarterfinal Stage:\\
+A Conditional Poisson Score Model with Monte Carlo Simulation}
+\author{Tianyue Shao\\
+\normalsize National University of Singapore}
+\date{July 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+We develop a fully specified probabilistic model for predicting the champion of
+the 2026 FIFA World Cup \emph{conditional} on the tournament having reached the
+quarterfinal stage. Goals in each remaining match follow independent Poisson
+distributions whose log-rates combine team attack and defence parameters with
+Elo-rating, in-tournament form, and rest-day covariates. Because every
+remaining match is a knockout tie, draws after regular time are resolved by a
+logistic tie-break driven by the Elo difference, which yields a closed-form
+advancement probability for every ordered pair of teams. Championship
+probabilities for the eight quarterfinalists are then estimated by Monte Carlo
+simulation of the remaining seven matches. We describe how the match-level
+probabilities are computed, provide pseudocode and a reference Python
+implementation, and discuss interpretation, limitations, and extensions,
+including expected goals, injuries, betting odds, and Bayesian parameter
+uncertainty. All model inputs are estimated from real data through 7~July
+2026: Elo ratings are replicated from the full international match record
+(1872--2026), attack and defence parameters and covariate coefficients are
+fitted by time-decayed Poisson regression on 2016--2026 internationals, and
+the tie-break slope is fitted to 681 historical penalty shoot-outs. The
+resulting probabilities are genuine model-based estimates, conditional on the
+model's simplifying assumptions; data provenance, processing rules, and exact
+reproduction steps are documented in the appendix.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+With the quarterfinal line-up of the 2026 FIFA World Cup decided, exactly eight
+teams can still win the title and only seven matches remain: four
+quarterfinals, two semifinals, and the final. This note formalizes the
+question every observer now asks---\emph{given} that a team has reached the
+quarterfinals, what is its probability of winning the World Cup?---and answers
+it with a transparent, reproducible pipeline consisting of (i) a Poisson model
+for match scores, (ii) covariate-driven scoring rates, (iii) a logistic
+tie-break for drawn knockout matches, and (iv) Monte Carlo simulation of the
+remaining bracket.
+
+Independent Poisson models have been the workhorse of association-football
+score prediction since Maher \cite{maher1982modelling}. Dixon and Coles
+\cite{dixon1997modelling} refined the approach with an adjustment for the
+dependence of low-scoring outcomes and with time-decayed estimation, and
+bivariate extensions are analysed by Karlis and Ntzoufras
+\cite{karlis2003analysis}. Aggregate team strength is convenient
+to summarize through Elo-style ratings \cite{elo1978rating}, and
+simulation-based forecasting of knockout tournaments is standard practice in
+the sports-analytics literature \cite{koning2003simulation,groll2019hybrid}.
+The model
+presented here deliberately stays within this classical framework so that
+every component is easy to estimate, audit, and extend.
+
+Two design choices deserve emphasis. First, the prediction is
+\emph{conditional}: the group stage and all earlier knockout rounds have been
+played, so teams eliminated before the quarterfinals are excluded from the
+sample space, and the realized bracket---who plays whom, and which semifinal
+awaits each winner---is treated as known
+(Section~\ref{sec:conditional}). Second, although only seven matches remain,
+we estimate championship probabilities by Monte Carlo simulation rather than
+by exact enumeration; the reasons, chiefly extensibility and richer outputs,
+are discussed in Section~\ref{sec:mc} and Appendix~\ref{app:whymc}.
+
+The note is organized as follows. Section~\ref{sec:conditional} defines the
+conditional prediction problem and the bracket.
+Section~\ref{sec:poisson} specifies the Poisson score model.
+Section~\ref{sec:matchprob} derives match-level win and draw probabilities,
+and Section~\ref{sec:draws} treats extra time and penalties.
+Section~\ref{sec:mc} presents the Monte Carlo scheme, whose pseudocode appears
+in Section~\ref{sec:algorithm}. Sections~\ref{sec:data}
+and~\ref{sec:output} document the data inputs and the interpretation of the
+output, and Section~\ref{sec:limitations} discusses limitations.
+Appendix~\ref{app:notes} collects supplementary modelling notes. A reference
+implementation is provided in the companion files \texttt{fit\_parameters.py}
+(parameter estimation), \texttt{simulate\_worldcup.py} (tournament
+simulation), and \texttt{data\_template.csv} (estimated team covariates).
+
+\section{The Conditional Prediction Problem}
+\label{sec:conditional}
+
+Let
+\[
+\mathcal{T} = \{\text{France, Morocco, Spain, Belgium, Norway, England,
+Argentina, Switzerland}\}
+\]
+denote the set of quarterfinalists, and let $C \in \mathcal{T}$ denote the
+eventual champion. Write $\mathcal{Q}$ for the conditioning information: the
+identity of the eight quarterfinalists together with the realized bracket,
+
+\begin{itemize}
+  \item \textbf{QF1:} France vs.\ Morocco,
+  \item \textbf{QF2:} Spain vs.\ Belgium,
+  \item \textbf{QF3:} Norway vs.\ England,
+  \item \textbf{QF4:} Argentina vs.\ Switzerland,
+  \item \textbf{SF1:} winner(QF1) vs.\ winner(QF2),
+  \item \textbf{SF2:} winner(QF3) vs.\ winner(QF4),
+  \item \textbf{Final:} winner(SF1) vs.\ winner(SF2).
+\end{itemize}
+
+The target of inference is the vector of conditional championship
+probabilities
+\begin{equation}
+p_t \;=\; \Prob\bigl(C = t \,\big|\, \mathcal{Q}\bigr),
+\qquad t \in \mathcal{T}.
+\label{eq:target}
+\end{equation}
+
+Three properties follow directly from the conditioning. First, any team
+eliminated before the quarterfinals is excluded from the sample space, so its
+championship probability is zero \emph{by construction}; the model never
+simulates such teams. Second, the probabilities in \eqref{eq:target} sum to
+one over the eight quarterfinalists, because exactly one of them will lift the
+trophy. Third, everything that happened before the quarterfinals---group-stage
+results, earlier knockout rounds, accumulated minutes---enters the model only
+through the team covariates measured at the quarterfinal snapshot (Elo rating,
+tournament form, rest days; Section~\ref{sec:data}). Consequently, the numbers
+produced here are \emph{not} comparable to pre-tournament title odds, which
+average over the many brackets and line-ups that never materialized.
+
+\section{Poisson Score Model}
+\label{sec:poisson}
+
+Consider a remaining match between teams $i$ and $j$, and let $G_i$ and $G_j$
+denote the goals they score in regular time (90 minutes). We assume
+conditionally independent Poisson counts,
+\begin{equation}
+G_i \sim \mathrm{Poisson}(\lambda_{ij}),
+\qquad
+G_j \sim \mathrm{Poisson}(\lambda_{ji}),
+\label{eq:poisson}
+\end{equation}
+with a log-linear model for the scoring rates:
+\begin{equation}
+\log \lambda_{ij}
+\;=\;
+\alpha \;+\; a_i \;-\; d_j
+\;+\; \gamma \,(E_i - E_j)
+\;+\; \delta \,(F_i - F_j)
+\;+\; \rho \,(R_i - R_j),
+\label{eq:lograte}
+\end{equation}
+and symmetrically for $\lambda_{ji}$ with the roles of $i$ and $j$ exchanged.
+The ingredients of \eqref{eq:lograte} are:
+\begin{itemize}
+  \item $\alpha$: a baseline log scoring rate, common to all teams, which
+        absorbs the average goal level of knockout football at a neutral
+        venue (there is no home-advantage term because World Cup knockout
+        matches are treated as neutral-site fixtures);
+  \item $a_i$: the \emph{attack strength} of team $i$ (larger values mean
+        more goals scored, all else equal);
+  \item $d_j$: the \emph{defence parameter} of team $j$. With the sign
+        convention of \eqref{eq:lograte}, a larger $d_j$ \emph{reduces} the
+        opponent's scoring rate, so $d_j$ measures defensive
+        \emph{strength}. (Some authors instead add a defensive-weakness
+        parameter $d_j^{\mathrm{w}}$ with a plus sign; the two conventions
+        are equivalent via $d_j^{\mathrm{w}} = -d_j$.);
+  \item $E_i$: the Elo rating of team $i$ entering the quarterfinal stage;
+  \item $F_i$: a measure of \emph{tournament form}, e.g.\ a composite score
+        of performances in this World Cup so far;
+  \item $R_i$: rest days before the match (a fatigue proxy);
+  \item $\gamma, \delta, \rho$: coefficients converting the covariate
+        differences into log-rate effects.
+\end{itemize}
+
+Because only rating, form, and rest \emph{differences} enter
+\eqref{eq:lograte}, the model is invariant to common shifts in the covariates.
+The attack and defence parameters are identified only up to additive
+constants (a shift of all $a_i$ can be absorbed into $\alpha$, and similarly
+for $d_i$), so in estimation one imposes the usual sum-to-zero constraints
+$\sum_i a_i = \sum_i d_i = 0$.
+
+In practice the parameters
+$\theta = (\alpha, \{a_i\}, \{d_i\}, \gamma, \delta, \rho)$ are estimated by
+maximum likelihood from a historical database of international matches, with
+each match contributing two Poisson log-likelihood terms; down-weighting old
+matches with an exponential time decay, as advocated by Dixon and Coles
+\cite{dixon1997modelling}, and shrinking $a_i, d_i$ toward zero for teams with
+few observations are both recommended. The companion script
+\texttt{fit\_parameters.py} implements exactly this estimation: iteratively
+reweighted least squares on the 10{,}048 internationals played since 2016 in
+the open dataset of \cite{martj42results} (two observations per match), with
+a three-year half-life decay and a light ridge penalty on the team
+parameters. Section~\ref{sec:data} reports the fitted values used throughout
+this note.
+
+The independence assumption in \eqref{eq:poisson} is a deliberate
+simplification: empirically, low-scoring outcomes exhibit mild dependence,
+which Dixon and Coles \cite{dixon1997modelling} capture with a local
+correction factor and Karlis and Ntzoufras \cite{karlis2003analysis} with a
+bivariate Poisson model. Either refinement
+can be substituted for \eqref{eq:poisson} without changing anything downstream
+in the simulation.
+
+\section{Estimation of Match-Level Win Probabilities}
+\label{sec:matchprob}
+
+Under \eqref{eq:poisson}, the joint probability of the regular-time score
+$(x, y)$ is the product of the two Poisson probability mass functions:
+\begin{equation}
+\Prob(G_i = x,\, G_j = y)
+\;=\;
+\frac{e^{-\lambda_{ij}}\,\lambda_{ij}^{x}}{x!}
+\cdot
+\frac{e^{-\lambda_{ji}}\,\lambda_{ji}^{y}}{y!},
+\qquad x, y \in \{0, 1, 2, \dots\}.
+\label{eq:jointpmf}
+\end{equation}
+Summing over the relevant regions of the score grid gives the regular-time
+outcome probabilities
+\begin{align}
+\Prob(i \text{ wins in regular time})
+&= \sum_{x > y} \Prob(G_i = x,\, G_j = y),
+\label{eq:winRT}\\
+\Prob(\text{draw})
+&= \sum_{x = y} \Prob(G_i = x,\, G_j = y),
+\label{eq:draw}
+\end{align}
+with $\Prob(j \text{ wins in regular time})$ the complementary sum over
+$x < y$.
+
+For numerical evaluation the infinite grid is truncated at a maximum goal
+count $G_{\max}$ (we use $G_{\max} = 10$), and the truncated joint
+distribution is renormalized to compensate for the discarded tail mass:
+\begin{equation}
+\widetilde{\Prob}(G_i = x,\, G_j = y)
+\;=\;
+\frac{\Prob(G_i = x,\, G_j = y)}
+{\displaystyle\sum_{x'=0}^{G_{\max}}\sum_{y'=0}^{G_{\max}}
+\Prob(G_i = x',\, G_j = y')},
+\qquad 0 \le x, y \le G_{\max}.
+\label{eq:truncation}
+\end{equation}
+For realistic international scoring rates ($\lambda \le 3$), the Poisson tail
+mass beyond ten goals is of order $10^{-4}$ or smaller, so the truncation
+error is negligible; the renormalization in \eqref{eq:truncation} removes even
+that residual and guarantees that the computed probabilities sum exactly to
+one. In the implementation, the sums
+\eqref{eq:winRT}--\eqref{eq:draw} are evaluated on the
+$(G_{\max}+1) \times (G_{\max}+1)$ outer-product grid of the two truncated
+marginal probability vectors.
+
+\section{Treatment of Draws, Extra Time, and Penalties}
+\label{sec:draws}
+
+Every remaining match is a knockout tie: if the score is level after regular
+time, 30 minutes of extra time are played, followed if necessary by a penalty
+shoot-out. Rather than modelling extra-time goals and penalty kicks
+explicitly, we collapse the entire tie-break stage into a single conditional
+probability, logistic in the Elo difference:
+\begin{equation}
+\Prob\bigl(i \text{ wins tie-break} \,\big|\, \text{draw}\bigr)
+\;=\;
+\frac{1}{1 + \exp\bigl(-\eta\,(E_i - E_j)\bigr)}.
+\label{eq:tiebreak}
+\end{equation}
+The slope $\eta \ge 0$ controls how strongly team quality carries into extra
+time and penalties: $\eta = 0$ makes the tie-break a fair coin, which is a
+reasonable approximation for penalty shoot-outs, while larger $\eta$ lets the
+stronger team convert its superiority. Fitted by maximum likelihood to the
+681 recorded penalty shoot-outs in \cite{martj42results}
+(\texttt{fit\_parameters.py}), the slope is $\eta = 0.0014$: a 100-point Elo
+advantage yields a tie-break win probability of only $0.53$, confirming
+empirically that shoot-outs are nearly fair coins. Because the fit uses
+shoot-outs alone, it plausibly understates the stronger team's edge in the
+extra-time portion of the tie-break, making this $\eta$ a conservative
+choice. A more granular alternative---simulating extra time as a 30-minute
+Poisson period with rates $\lambda_{ij}/3$ and modelling the shoot-out
+separately---is discussed in Appendix~\ref{app:extensions};
+\eqref{eq:tiebreak} is the parsimonious default.
+
+Combining \eqref{eq:winRT}, \eqref{eq:draw}, and \eqref{eq:tiebreak}, the
+\emph{total advancement probability} of team $i$ against team $j$ in a
+knockout match is
+\begin{equation}
+p_{ij}
+\;=\;
+\Prob(i \text{ wins in regular time})
+\;+\;
+\Prob(\text{draw}) \cdot
+\Prob\bigl(i \text{ wins tie-break} \,\big|\, \text{draw}\bigr).
+\label{eq:advancement}
+\end{equation}
+Because the logistic function satisfies
+$\sigma(z) + \sigma(-z) = 1$, the advancement probabilities are coherent:
+$p_{ij} + p_{ji} = 1$ for every pair, so exactly one team advances.
+
+The quantities $p_{ij}$ can be used inside the Monte Carlo simulation in two
+equivalent ways. One may draw the advancing team directly as a Bernoulli
+trial with success probability $p_{ij}$; or one may simulate the match at the
+score level---draw $(G_i, G_j)$ from \eqref{eq:poisson} and, in case of a
+draw, resolve the tie with a Bernoulli draw from \eqref{eq:tiebreak}. Both
+schemes induce the same advancement law; we adopt the score-level scheme
+(Algorithm~\ref{alg:match}) because it additionally yields simulated score
+lines at no extra cost, while \eqref{eq:advancement} provides an analytic
+cross-check on the simulator.
+
+\section{Monte Carlo Tournament Simulation}
+\label{sec:mc}
+
+Championship probabilities compound seven dependent match outcomes: a team
+must win its quarterfinal, then beat whichever team emerges from the paired
+quarterfinal, then beat whichever team survives the other half of the
+bracket. Monte Carlo simulation handles this compounding mechanically. In
+each replication $b = 1, \dots, B$ we simulate the four quarterfinals, feed
+the winners into the two semifinals, simulate the final, and record the
+champion $C^{(b)}$. The estimator of \eqref{eq:target} is the empirical
+frequency
+\begin{equation}
+\hat{p}_t \;=\; \frac{1}{B} \sum_{b=1}^{B} \Ind\{C^{(b)} = t\},
+\qquad t \in \mathcal{T},
+\label{eq:mcestimator}
+\end{equation}
+which is unbiased for $p_t$ under the model, with Monte Carlo standard error
+\begin{equation}
+\mathrm{se}(\hat{p}_t) \;=\; \sqrt{\frac{\hat{p}_t (1 - \hat{p}_t)}{B}}
+\;\le\; \frac{1}{2\sqrt{B}}.
+\label{eq:mcse}
+\end{equation}
+With $B = 100{,}000$ replications the standard error is at most $0.0016$
+(about $0.16$ percentage points), far below any plausible model
+uncertainty, and the simulation completes in about a second on a laptop. A
+fixed random seed makes the results exactly reproducible.\footnote{The
+simulator draws goals from the untruncated Poisson distributions in
+\eqref{eq:poisson}; the truncation \eqref{eq:truncation} is used only for the
+analytic probabilities \eqref{eq:advancement}. The resulting discrepancy is
+below the Monte Carlo noise floor.}
+
+With eight teams and seven matches, the champion probabilities could also be
+computed \emph{exactly} by enumerating the $2^7 = 128$ bracket outcomes, or
+via the closed-form path factorization given in Appendix~\ref{app:path}. We
+nevertheless present the Monte Carlo route---the standard approach in
+tournament forecasting from the championship simulator of Koning et
+al.~\cite{koning2003simulation} to the World Cup forecasts of Groll et
+al.~\cite{groll2019hybrid}: it is just as accurate for practical
+purposes, its code mirrors the recursive structure of the tournament, and it
+survives every extension of Appendix~\ref{app:extensions}---Bayesian parameter
+draws, injury shocks, score-dependent features---for which the closed form
+ceases to exist. Appendix~\ref{app:whymc} expands on this trade-off.
+
+\section{Data Inputs}
+\label{sec:data}
+
+The model consumes one row of covariates per quarterfinalist:
+Elo rating $E_i$, attack strength $a_i$, defence strength $d_i$, tournament
+form $F_i$, and rest days $R_i$. All inputs are estimated from the open
+match-level dataset of \cite{martj42results}, which at retrieval (9~July
+2026) covered 49{,}505 internationals from 1872 through 7~July 2026,
+including every match of the 2026 World Cup up to the round of~16. The
+components are constructed as follows.
+\begin{itemize}
+  \item \textbf{Elo ratings} are computed by replaying the full match
+        history through the eloratings.net update rule
+        \cite{elo1978rating,eloratings}: importance-dependent $K$ factors
+        (60 for World Cup finals matches, down to 20 for friendlies), a
+        goal-difference multiplier, a 100-point home-advantage adjustment
+        for non-neutral venues, and shoot-outs counted as draws. The
+        replication reproduces the published ranking of the eight
+        quarterfinalists (Spain first, then Argentina, France, England) and
+        their relative gaps to within a few points, up to a benign uniform
+        level offset of roughly $+70$; only rating \emph{differences} enter
+        the model, so the offset is irrelevant.
+  \item \textbf{Attack and defence} parameters and the coefficients
+        $(\gamma, \delta, \rho)$ come from the time-decayed Poisson
+        regression of Section~\ref{sec:poisson}
+        (\texttt{fit\_parameters.py}), fitted jointly with a home-advantage
+        term on all 2016--2026 internationals.
+  \item \textbf{Form} $F_i$ is the mean goal difference over the team's last
+        five internationals---for a 2026 quarterfinalist, exactly its five
+        World Cup matches so far (three group games, round of~32, round
+        of~16)---matching the definition used in the regression.
+  \item \textbf{Rest days} $R_i$ are counted from the round-of-16 match to
+        the scheduled quarterfinal (capped at 14 in the regression; all
+        quarterfinalists have 4--6 days).
+\end{itemize}
+Table~\ref{tab:inputs} lists the resulting inputs in bracket order. The same
+values are stored in \texttt{data\_template.csv}, which the simulation script
+reads; re-running \texttt{fit\_parameters.py} on a refreshed download
+regenerates them. Appendix~\ref{app:repro} records the full provenance
+chain---download URLs, retrieval date, file checksums, every processing
+rule, the fitted coefficients, and step-by-step reproduction commands.
+
+\begin{table}[htbp]
+\centering
+\caption{Quarterfinal bracket and estimated model inputs (data through
+7~July 2026; see the text for construction). Attack and defence are
+mean-zero across all 294 teams in the regression, so top-eight values are
+well above zero. Values are rounded; \texttt{data\_template.csv} carries
+full precision.}
+\label{tab:inputs}
+\begin{tabular}{llrrrrr}
+\toprule
+Match & Team & Elo $E_i$ & Attack $a_i$ & Defence $d_i$ & Form $F_i$ & Rest $R_i$ (days)\\
+\midrule
+QF1 & France      & 2207 & 0.63 & 0.59 & 2.4 & 5\\
+    & Morocco     & 2056 & 0.43 & 0.96 & 1.2 & 5\\
+\addlinespace
+QF2 & Spain       & 2242 & 0.73 & 0.73 & 1.8 & 4\\
+    & Belgium     & 2042 & 0.69 & 0.51 & 1.6 & 4\\
+\addlinespace
+QF3 & Norway      & 2042 & 0.76 & 0.48 & 0.6 & 6\\
+    & England     & 2150 & 0.59 & 0.77 & 1.2 & 6\\
+\addlinespace
+QF4 & Argentina   & 2236 & 0.58 & 0.81 & 1.8 & 4\\
+    & Switzerland & 2024 & 0.61 & 0.54 & 1.2 & 4\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The fitted coefficients are
+\[
+\alpha = 0.1503,\qquad
+\gamma = 0.00097,\qquad
+\delta = 0.0053,\qquad
+\rho = -0.0009,\qquad
+\eta = 0.0014,
+\]
+with the score grid truncated at $G_{\max} = 10$. Three remarks aid
+interpretation. First, the regression also recovers a home-advantage effect
+of $\exp(0.234) \approx 1.26$---the textbook 26\% scoring boost---which
+validates the pipeline but plays no role in the neutral-venue knockout
+matches simulated here. Second, the fitted $\rho$ is practically nil, so the
+small rest-day differences between quarterfinalists barely move the
+forecasts. Third, $\gamma$ and $\delta$ are modest by construction: the
+attack and defence parameters already absorb persistent quality differences,
+so the Elo and form terms only capture what those parameters miss. The
+resulting expected goals in the four quarterfinals range from $0.77$
+(Switzerland against Argentina) to $1.76$ (Spain against Belgium), in line
+with knockout-stage scoring.
+
+\section{Algorithm}
+\label{sec:algorithm}
+
+Algorithm~\ref{alg:tournament} summarizes the Monte Carlo procedure, and
+Algorithm~\ref{alg:match} the single-match subroutine that it calls seven
+times per replication. The pseudocode maps one-to-one onto the functions
+\texttt{simulate\_tournament} and \texttt{simulate\_match} in
+\texttt{simulate\_worldcup.py}.
+
+\input{algorithm.tex}
+
+\section{Output Interpretation}
+\label{sec:output}
+
+Running \texttt{simulate\_worldcup.py} on the estimated inputs of
+Table~\ref{tab:inputs} first reports the analytic quarterfinal advancement
+probabilities from \eqref{eq:advancement}---France over Morocco $0.552$,
+Spain over Belgium $0.706$, England over Norway $0.608$, and Argentina over
+Switzerland $0.694$---and then the simulated championship probabilities shown
+in Table~\ref{tab:output}.
+
+\begin{table}[htbp]
+\centering
+\caption{Conditional championship probabilities,
+$\hat{p}_t = \widehat{\Prob}(\text{champion} \mid \text{quarterfinalist})$,
+from $B = 100{,}000$ simulated tournaments (seed 42) under the estimated
+inputs of Table~\ref{tab:inputs} (data through 7~July 2026, the eve of the
+quarterfinals). Re-running the pipeline after each completed match refreshes
+the forecast.}
+\label{tab:output}
+\begin{tabular}{lr}
+\toprule
+Team & $\hat{p}_t$\\
+\midrule
+Spain       & 0.2554\\
+Argentina   & 0.2291\\
+England     & 0.1451\\
+France      & 0.1333\\
+Morocco     & 0.0881\\
+Norway      & 0.0587\\
+Belgium     & 0.0480\\
+Switzerland & 0.0424\\
+\midrule
+Total       & 1.0000\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several remarks guide the reading of Table~\ref{tab:output}. The eight
+probabilities sum to one because, conditional on the quarterfinal stage,
+exactly one of these teams wins the title; teams eliminated earlier do not
+appear and implicitly carry probability zero. Each entry carries a Monte
+Carlo standard error of at most $0.0016$ by \eqref{eq:mcse}, so differences
+beyond the third decimal are noise. Two features of the estimates stand out.
+First, the tightest quarterfinal is France--Morocco: Morocco's fitted
+defence is the strongest among the eight, which compresses France's
+advancement probability to $0.55$ and makes Morocco's title probability
+($0.088$) the highest of the four lower-rated teams. Second, England's
+championship probability ($0.145$) exceeds France's ($0.133$) even though
+France carries the higher Elo rating---a pure bracket effect, dissected in
+Appendix~\ref{app:path}. The script also writes the table to
+\texttt{champion\_probabilities.csv} for downstream use.
+
+Finally, the output inherits the model's specification choices: the decay
+half-life, the regression window, the ridge penalty, and the shoot-out-only
+fit of $\eta$ are defensible defaults rather than uniquely correct ones, and
+a sensitivity analysis over them is a sensible companion to any headline
+number. The forecast is also a snapshot: when covariates or coefficients
+change---a completed quarterfinal, an injury update, a re-fitted
+regression---the pipeline should simply be re-run.
+
+\section{Limitations and Extensions}
+\label{sec:limitations}
+
+The model's simplicity is deliberate, but several limitations should be kept
+in mind.
+
+\begin{itemize}
+  \item \textbf{Independence of scores.} Equation~\eqref{eq:poisson} ignores
+        the mild dependence between the two teams' goal counts in
+        low-scoring matches; the Dixon--Coles correction
+        \cite{dixon1997modelling} or the bivariate Poisson of Karlis and
+        Ntzoufras \cite{karlis2003analysis} are drop-in upgrades.
+  \item \textbf{Static strengths.} Attack, defence, Elo, and form are frozen
+        at the quarterfinal snapshot; the model does not update them as the
+        simulated tournament progresses (e.g.\ no fatigue accumulation from a
+        simulated extra-time semifinal).
+  \item \textbf{Collapsed tie-break.} Equation~\eqref{eq:tiebreak} folds
+        extra time and penalties into one logistic step; shoot-outs in
+        particular are close to coin flips, and a mis-set $\eta$ distorts the
+        probabilities precisely in the tight matches that decide titles.
+  \item \textbf{Estimation uncertainty.} The coefficients are maximum
+        likelihood point estimates whose sampling error is not propagated
+        into Table~\ref{tab:output}; the Bayesian extension of
+        Appendix~\ref{app:extensions} addresses this. Two data quirks also
+        matter: recorded knockout scores include extra-time goals, mildly
+        inflating regular-time rates, and $\eta$ is identified from
+        shoot-outs only.
+  \item \textbf{Covariate quality.} Elo ratings lag sudden quality changes,
+        and a form score built from at most five tournament matches is
+        noisy; player-level information (injuries, suspensions) is absent.
+\end{itemize}
+
+Natural extensions---incorporating expected goals, injury adjustments,
+betting-market information, and full Bayesian uncertainty
+quantification---are developed in Appendix~\ref{app:extensions}. All of them
+leave Algorithm~\ref{alg:tournament} untouched: they enrich either the inputs
+or the parameter draws, which is exactly why the Monte Carlo architecture was
+chosen.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have specified a complete, reproducible pipeline for conditional World Cup
+champion prediction from the quarterfinal stage: a covariate-driven Poisson
+model for regular-time scores, a logistic Elo-based tie-break for knockout
+draws, closed-form match advancement probabilities, and a Monte Carlo
+simulation of the remaining seven matches that converts match-level
+probabilities into championship probabilities for the eight surviving teams.
+The accompanying pseudocode, estimation script, and simulation code make the
+model runnable end to end in seconds. All inputs are fitted to the
+international match record through 7~July 2026---the eve of the
+quarterfinals---so Table~\ref{tab:output} is a live model forecast at the
+quarterfinal stage, refreshable by re-running the pipeline as results
+arrive. Beyond the 2026 World Cup, the same architecture
+applies unchanged to any single-elimination bracket whose match outcomes can
+be given pairwise advancement probabilities.
+
+\appendix
+\input{model_notes.tex}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

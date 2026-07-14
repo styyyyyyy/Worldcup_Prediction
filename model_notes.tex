@@ -1,0 +1,264 @@
+% ---------------------------------------------------------------------------
+% model_notes.tex
+% Appendix: supplementary modelling notes.
+% This file is \input by main.tex after \appendix; it is not a standalone
+% document.
+% ---------------------------------------------------------------------------
+
+\section{Supplementary Model Notes}
+\label{app:notes}
+
+\subsection{Why the prediction is conditional on the quarterfinal stage}
+\label{app:conditional}
+
+A pre-tournament forecast must average over an enormous outcome space: group
+compositions, group-stage results, and several knockout rounds, each of which
+reshuffles who meets whom. Once the tournament reaches the quarterfinals,
+almost all of that uncertainty has been \emph{resolved}. The sample space
+collapses to the eight surviving teams and the seven remaining matches, and
+the realized bracket---including which half each team occupies---is known
+exactly. Conditioning on this information has three consequences.
+
+First, eliminated teams are excluded by construction: a team knocked out in
+the group stage or an earlier round has conditional championship probability
+zero, and the model never represents it. Second, the conditional
+probabilities of the eight quarterfinalists necessarily sum to one, which
+makes the output directly interpretable as a complete probability
+distribution over the champion. Third, the conditional forecast is generally \emph{sharper} than a
+pre-tournament one: for a team that was expected to struggle, having already
+reached the last eight is strong evidence of current quality, which enters the
+model through the updated covariates (Elo after the earlier rounds, tournament
+form, rest days). Conversely, quantities from before the tournament---title
+odds, group-stage simulations---answer a different question and must not be
+compared numerically to the conditional probabilities computed here.
+
+\subsection{Why Monte Carlo simulation is useful with only seven matches
+remaining}
+\label{app:whymc}
+
+With eight teams and seven binary match outcomes, the remaining tournament has
+only $2^7 = 128$ possible trajectories, and the championship probabilities
+admit the closed-form factorization of Appendix~\ref{app:path}. Monte Carlo
+simulation is nevertheless the method of choice, for four reasons.
+
+\begin{enumerate}
+  \item \textbf{Extensibility.} The closed form exists only because match
+        outcomes are conditionally independent given fixed parameters. Every
+        realistic enrichment breaks it: drawing model parameters from a
+        Bayesian posterior in each replication, injecting random injury or
+        fatigue shocks, or letting a simulated extra-time semifinal reduce a
+        finalist's rest covariate all induce dependence across matches.
+        The simulator of Algorithm~\ref{alg:tournament} absorbs each of these
+        changes with a few added lines; the analytic formula has to be
+        re-derived or abandoned.
+  \item \textbf{Richer outputs.} The same simulated trajectories that
+        estimate champion probabilities also deliver, at no extra cost, the
+        distribution of final pairings, the probability that a given team
+        reaches each round, expected goals per fixture, and the joint law of
+        any bracket event of interest.
+  \item \textbf{Negligible cost and controlled error.} With $B = 100{,}000$
+        replications the worst-case standard error is $0.16$ percentage
+        points, far below model uncertainty, and the run completes in about a
+        second. Increasing $B$ buys arbitrary accuracy at linear cost.
+  \item \textbf{Transparency.} The code mirrors the tournament's structure
+        line by line (four quarterfinals, two semifinals, one final), which
+        makes it easy to audit against the bracket---often harder for a
+        hand-derived sum over 128 paths.
+\end{enumerate}
+
+\subsection{How the bracket path affects championship probability}
+\label{app:path}
+
+Championship probability is not a function of team strength alone; it depends
+on \emph{who can be met, and when}. Consider a team $t$ with quarterfinal
+opponent $u$, let $\mathcal{V}$ denote the two teams in the paired
+quarterfinal (the potential semifinal opponents), and let $\mathcal{W}$ denote
+the four teams in the other half of the bracket (the potential final
+opponents). Because match outcomes are conditionally independent given the
+parameters, the conditional championship probability factorizes along the
+path:
+\begin{equation}
+\Prob(C = t \mid \mathcal{Q})
+\;=\;
+\underbrace{p_{tu}}_{\text{quarterfinal}}
+\;\times\;
+\underbrace{\sum_{v \in \mathcal{V}} q_v\, p_{tv}}_{\text{semifinal}}
+\;\times\;
+\underbrace{\sum_{w \in \mathcal{W}} f_w\, p_{tw}}_{\text{final}},
+\label{eq:pathfactorization}
+\end{equation}
+where $q_v$ is the probability that $v$ wins the paired quarterfinal, and
+$f_w$ is the probability that $w$ emerges from the other half, computed
+recursively as $f_w = \Prob(w \text{ wins its QF}) \sum_{u'} q_{u'}\,p_{wu'}$
+with the sum running over the other half's adjacent quarterfinal (so that
+$\sum_{w \in \mathcal{W}} f_w = 1$). Equation
+\eqref{eq:pathfactorization} is exactly what the Monte Carlo procedure
+estimates, and it makes the bracket dependence explicit: the semifinal factor
+for France averages over \{Spain, Belgium\}, whereas the semifinal factor for
+England averages over \{Argentina, Switzerland\}.
+
+Under the estimated inputs this matters visibly. France enters the
+quarterfinals with a higher Elo rating than England (2207 versus 2150), yet
+England's championship probability (0.145) exceeds France's (0.133). The
+reason is France's path: it must first break down Morocco, the best-fitted
+defence among the eight, and then---because the top half's two strongest
+teams, France and Spain, sit in \emph{adjacent} quarterfinals---most likely
+face Spain already in semifinal~1, so at most one of the two can reach the
+final. A counterfactual bracket that placed Spain in the bottom half would
+raise France's title probability without changing a single team parameter.
+This is why re-seeding debates are substantive: the draw itself carries
+probability mass.
+
+\subsection{Extensions: expected goals, injuries, betting odds, and Bayesian
+uncertainty}
+\label{app:extensions}
+
+\paragraph{Expected goals (xG).}
+Raw goal counts are noisy realizations of chance creation. A first upgrade
+fits the attack and defence parameters of \eqref{eq:lograte} to xG totals
+rather than goals, reducing finishing noise in estimation. A second adds an
+xG-differential covariate to the log-rate,
+$\log \lambda_{ij} \mathrel{+}= \kappa\,(X_i - X_j)$, where $X_i$ is the
+team's tournament xG difference per match; this captures underlying
+performance that results-based measures like Elo absorb only slowly.
+
+\paragraph{Injuries and suspensions.}
+Player availability can be folded in through an availability-adjusted rating
+$E_i^{\mathrm{adj}} = E_i - \pi_i$, where $\pi_i$ converts missing players
+into rating points (e.g.\ minutes-weighted contribution estimates). More
+ambitiously, availability can be made stochastic: in each Monte Carlo
+replication, draw an injury/suspension scenario for the remaining rounds and
+adjust the affected team's parameters before simulating---one of the
+dependence-inducing extensions for which the closed form of
+Appendix~\ref{app:path} no longer applies.
+
+\paragraph{Betting odds.}
+Bookmaker prices aggregate large information sets. After removing the
+bookmaker margin (overround), match odds imply advancement probabilities
+$p_{ij}^{\mathrm{mkt}}$ that can be used in three ways: as a benchmark to
+validate the model's $p_{ij}$; as a blend
+$\tilde{p}_{ij} = \omega\, p_{ij}^{\mathrm{mkt}} + (1 - \omega)\, p_{ij}$
+with $\omega$ chosen by historical calibration; or as calibration targets to
+which the coefficients $(\gamma, \delta, \rho, \eta)$ are tuned.
+
+\paragraph{Bayesian uncertainty.}
+The pipeline treats $\theta = (\alpha, \{a_i\}, \{d_i\}, \gamma, \delta,
+\rho, \eta)$ as known, so Table~\ref{tab:output} understates real
+uncertainty. A Bayesian treatment places priors on $\theta$, obtains the
+posterior $p(\theta \mid \mathcal{D})$ from historical match data
+$\mathcal{D}$ (e.g.\ via MCMC in Stan or PyMC), and reports the posterior
+predictive championship probability
+\begin{equation}
+\Prob(C = t \mid \mathcal{Q}, \mathcal{D})
+\;=\;
+\int \Prob(C = t \mid \mathcal{Q}, \theta)\,
+p(\theta \mid \mathcal{D})\, d\theta,
+\label{eq:posteriorpredictive}
+\end{equation}
+implemented by drawing a fresh $\theta^{(b)}$ from the posterior in each
+Monte Carlo replication before simulating the bracket. The spread of
+$\Prob(C = t \mid \mathcal{Q}, \theta^{(b)})$ across draws yields credible
+intervals for each championship probability---typically wider, and more
+honest, than the Monte Carlo error bars alone. Time-decayed likelihood
+weights in the spirit of Dixon--Coles integrate naturally into the same
+framework.
+
+\section{Data Provenance and Reproducibility}
+\label{app:repro}
+
+This appendix records everything needed to audit or reproduce the numbers in
+this note. All inputs derive from one public match-level dataset; one
+published rating table is used solely for cross-validation.
+
+\subsection{Sources and retrieval}
+\label{app:sources}
+
+\begin{itemize}
+  \item \textbf{Match results.} \texttt{results.csv} from the
+        community-maintained repository of \cite{martj42results}
+        (\url{https://github.com/martj42/international_results}, raw file
+        \texttt{master/results.csv}), retrieved on 9~July 2026:
+        49{,}505 international matches from 30~November 1872 through
+        7~July 2026, plus the four scheduled quarterfinal fixtures. The file
+        contains all 96 matches of the 2026 World Cup played through the
+        round of~16 (72 group matches, 16 in the round of~32, 8 in the round
+        of~16). MD5 checksum:
+        \texttt{3820fec01802a4303d91b00d6e298bed}.
+  \item \textbf{Penalty shoot-outs.} \texttt{shootouts.csv} from the same
+        repository and retrieval date: 681 shoot-outs, 1967--2026. MD5
+        checksum: \texttt{3461b3d538309f7f17b63259e4b0b524}.
+  \item \textbf{Cross-validation only.} The published Elo table of 7~July
+        2026 \cite{eloratings} was used to verify the Elo replication of
+        Section~\ref{sec:data} (ranking and pairwise gaps of the eight
+        quarterfinalists); it enters no computation.
+\end{itemize}
+Both raw files are archived with the project sources, so every number in
+this note can be reproduced offline; the checksums allow byte-level
+verification against any fresh download.
+
+\subsection{Processing rules}
+\label{app:processing}
+
+\begin{enumerate}
+  \item Rows with missing scores (unplayed fixtures) are excluded from all
+        estimation; matches are processed in chronological order.
+  \item Recorded scores include extra-time goals and exclude penalty
+        shoot-outs (dataset convention). Matches decided by shoot-out
+        therefore enter both the Elo replay and the regression as draws.
+  \item \emph{Elo replay:} every team starts at 1500; after each match,
+        $R \leftarrow R + K G (W - W_e)$ with expected score
+        $W_e = (1 + 10^{-\mathrm{dr}/400})^{-1}$, where $\mathrm{dr}$ is the
+        rating difference plus 100 points for the home side at non-neutral
+        venues; $K = 60$ (World Cup finals), $50$ (continental finals),
+        $40$ (qualifiers, Nations League), $30$ (other tournaments), $20$
+        (friendlies); goal-difference multiplier $G = 1$, $1.5$, or
+        $(11 + |\Delta|)/8$ for winning margins $\le 1$, $= 2$, $\ge 3$.
+  \item \emph{Poisson regression:} all matches from 1~January 2016 through
+        7~July 2026 (10{,}048 matches, two observations each, 294 teams);
+        time-decay weights $0.5^{\Delta t / 1095\,\mathrm{days}}$ with
+        $\Delta t$ measured to 7~July 2026 (three-year half-life; effective
+        sample size 7{,}891); ridge penalty of $1.0$ on the attack/defence
+        dummies only; attack/defence recentred to mean zero after
+        convergence; Elo differences scaled by $1/100$ inside the solver
+        and rescaled on output; a home-advantage dummy is included in
+        estimation (fitted $0.2342$) and switched off in the neutral-venue
+        knockout predictions.
+  \item \emph{Covariates:} form $F_i$ is the mean goal difference over the
+        team's previous five internationals; rest $R_i$ is the number of
+        days since the team's previous international, capped at 14.
+        Identical definitions are used in estimation and prediction.
+  \item \emph{Tie-break:} $\eta$ is fitted by Newton--Raphson maximum
+        likelihood on the 681 shoot-outs, using each side's pre-match
+        replicated Elo rating.
+\end{enumerate}
+
+\subsection{Reproduction steps}
+\label{app:steps}
+
+With Python $\ge 3.9$, \texttt{numpy}, and \texttt{pandas}:
+
+\begin{verbatim}
+# (optional) refresh the data; otherwise the archived copies are used
+curl -sL -O https://raw.githubusercontent.com/martj42/\
+international_results/master/results.csv
+curl -sL -O https://raw.githubusercontent.com/martj42/\
+international_results/master/shootouts.csv
+
+python3 fit_parameters.py      # Elo replay + IRLS + eta fit  (~2 s)
+python3 simulate_worldcup.py   # 100,000 simulations, seed 42 (~1 s)
+\end{verbatim}
+
+\noindent
+\texttt{fit\_parameters.py} regenerates \texttt{data\_template.csv}
+(Table~\ref{tab:inputs}) and prints the fitted coefficients
+\[
+\alpha = 0.150326,\qquad
+\gamma = 0.000972,\qquad
+\delta = 0.005260,\qquad
+\rho = -0.000886,\qquad
+\eta = 0.001382,
+\]
+which are hard-coded in \texttt{simulate\_worldcup.py}. Every stage of the
+pipeline is deterministic---the simulation uses
+\texttt{numpy.random.default\_rng(42)}---so independent runs on the archived
+data reproduce Table~\ref{tab:output} exactly.

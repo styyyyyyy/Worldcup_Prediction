@@ -1,0 +1,74 @@
+% ---------------------------------------------------------------------------
+% algorithm.tex
+% Pseudocode for the Monte Carlo tournament simulation.
+% This file is \input by main.tex (Section "Algorithm"); it is not a
+% standalone document.
+% ---------------------------------------------------------------------------
+
+\begin{algorithm}[htbp]
+\caption{Monte Carlo estimation of conditional championship probabilities}
+\label{alg:tournament}
+\begin{algorithmic}[1]
+\Require quarterfinal pairings $(i_k, j_k)$ for $k = 1, \dots, 4$;
+         covariates $(E_t, F_t, R_t)$ and strength parameters $(a_t, d_t)$
+         for the eight quarterfinalists;
+         coefficients $(\alpha, \gamma, \delta, \rho, \eta)$;
+         number of replications $B$
+\Ensure  estimates $\hat{p}_t$ of
+         $\Prob(t \text{ wins the World Cup} \mid t \text{ is a quarterfinalist})$
+\State $c_t \gets 0$ for every quarterfinalist $t$
+       \Comment{championship counters}
+\For{$b \gets 1, \dots, B$}
+    \For{$k \gets 1, \dots, 4$}
+        \State $W_k \gets \Call{SimulateMatch}{i_k, j_k}$
+        \Comment{quarterfinals}
+    \EndFor
+    \State $S_1 \gets \Call{SimulateMatch}{W_1, W_2}$
+    \Comment{semifinal 1: winner QF1 vs.\ winner QF2}
+    \State $S_2 \gets \Call{SimulateMatch}{W_3, W_4}$
+    \Comment{semifinal 2: winner QF3 vs.\ winner QF4}
+    \State $C \gets \Call{SimulateMatch}{S_1, S_2}$
+    \Comment{final}
+    \State $c_C \gets c_C + 1$
+    \Comment{record the simulated champion}
+\EndFor
+\For{every quarterfinalist $t$}
+    \State $\hat{p}_t \gets c_t / B$
+    \Comment{title frequency estimates \eqref{eq:mcestimator}}
+\EndFor
+\State \Return $(\hat{p}_t)_{t \in \mathcal{T}}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[htbp]
+\caption{The \textsc{SimulateMatch} subroutine: one knockout match}
+\label{alg:match}
+\begin{algorithmic}[1]
+\Function{SimulateMatch}{$i, j$}
+    \State $\lambda_{ij} \gets \exp\bigl\{\alpha + a_i - d_j
+           + \gamma (E_i - E_j) + \delta (F_i - F_j)
+           + \rho (R_i - R_j)\bigr\}$
+    \State $\lambda_{ji} \gets \exp\bigl\{\alpha + a_j - d_i
+           + \gamma (E_j - E_i) + \delta (F_j - F_i)
+           + \rho (R_j - R_i)\bigr\}$
+    \State draw $G_i \sim \mathrm{Poisson}(\lambda_{ij})$ and
+           $G_j \sim \mathrm{Poisson}(\lambda_{ji})$ independently
+    \If{$G_i > G_j$}
+        \State \Return $i$ \Comment{win in regular time}
+    \ElsIf{$G_j > G_i$}
+        \State \Return $j$
+    \Else
+        \Comment{draw after regular time: extra time and penalties}
+        \State $\pi_{ij} \gets
+               \bigl(1 + \exp\{-\eta\,(E_i - E_j)\}\bigr)^{-1}$
+        \Comment{logistic tie-break \eqref{eq:tiebreak}}
+        \State draw $U \sim \mathrm{Uniform}(0, 1)$
+        \If{$U < \pi_{ij}$}
+            \State \Return $i$
+        \Else
+            \State \Return $j$
+        \EndIf
+    \EndIf
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
