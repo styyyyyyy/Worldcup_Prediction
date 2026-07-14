@@ -9,15 +9,27 @@ the tournament has reached the quarterfinal stage.
 matches, and Monte Carlo simulation of the remaining seven matches to estimate
 `P(team wins the World Cup | team is in the quarterfinals)`.
 
-**All inputs are estimated from real data through 7 July 2026** (the eve of the
-quarterfinals) — see *Data provenance* below. Headline forecast:
+## Prediction results
 
-| Team | P(champion) | | Team | P(champion) |
-| --- | --- | --- | --- | --- |
-| Spain | 0.255 | | Morocco | 0.088 |
-| Argentina | 0.229 | | Norway | 0.059 |
-| England | 0.145 | | Belgium | 0.048 |
-| France | 0.133 | | Switzerland | 0.042 |
+**All inputs are estimated from real data through 7 July 2026** (the eve of the
+quarterfinals). The table reports
+`P(team wins the World Cup | team reached the quarterfinals)`.
+
+| Rank | Team | Champion probability |
+| ---: | --- | ---: |
+| 1 | Spain | 25.5% |
+| 2 | Argentina | 22.9% |
+| 3 | England | 14.5% |
+| 4 | France | 13.3% |
+| 5 | Morocco | 8.8% |
+| 6 | Norway | 5.9% |
+| 7 | Belgium | 4.8% |
+| 8 | Switzerland | 4.2% |
+
+The machine-readable output is saved in
+[`champion_probabilities.csv`](champion_probabilities.csv). Re-running
+`python3 simulate_worldcup.py` reproduces the same table with seed `42`; see
+*Data provenance* below for the source data and model-fitting details.
 
 ## Files
 
