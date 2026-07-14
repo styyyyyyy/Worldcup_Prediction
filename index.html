@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World Cup Champion Prediction Dashboard</title>
+  <meta name="description" content="A static dashboard for the 2026 FIFA World Cup quarterfinal champion prediction model.">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --ink: #17202a;
+      --muted: #5a6472;
+      --line: #d8dee8;
+      --blue: #2563eb;
+      --cyan: #087d8f;
+      --green: #0c7a57;
+      --orange: #bc6519;
+      --rose: #b24357;
+      --gold: #a97908;
+      --shadow: 0 12px 28px rgba(24, 34, 48, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration-color: rgba(37, 99, 235, 0.45);
+      text-underline-offset: 0.2em;
+    }
+
+    a:hover {
+      text-decoration-color: currentColor;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.86);
+      backdrop-filter: blur(14px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .topbar .shell {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 0;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 220px;
+    }
+
+    .brand strong {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .navlinks {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .navlinks a {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 11px;
+      background: var(--surface);
+      font-size: 0.88rem;
+      font-weight: 650;
+      text-decoration: none;
+      box-shadow: 0 1px 0 rgba(24, 34, 48, 0.04);
+    }
+
+    header {
+      padding: 46px 0 28px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--green);
+      font-size: 0.82rem;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--green);
+    }
+
+    h1 {
+      max-width: 850px;
+      margin: 12px 0 12px;
+      font-size: 3rem;
+      line-height: 1.08;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      max-width: 790px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .metric-card {
+      min-height: 126px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      margin-top: 10px;
+      font-size: 2rem;
+      line-height: 1.1;
+      font-weight: 800;
+    }
+
+    .metric-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    main {
+      padding-bottom: 54px;
+    }
+
+    .section {
+      padding: 34px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .section-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .section h2 {
+      margin: 0;
+      font-size: 1.45rem;
+      line-height: 1.2;
+      font-weight: 780;
+    }
+
+    .section-desc {
+      max-width: 560px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      text-align: right;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+      gap: 28px;
+      align-items: start;
+    }
+
+    .probability-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .probability-row {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr) 70px;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .team-name {
+      font-weight: 740;
+    }
+
+    .bar-track {
+      height: 26px;
+      border-radius: 8px;
+      background: #e8edf4;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bar-fill {
+      width: var(--p);
+      height: 100%;
+      border-radius: 8px;
+      background: linear-gradient(90deg, var(--bar-color), color-mix(in srgb, var(--bar-color) 78%, #ffffff));
+    }
+
+    .probability-value {
+      font-weight: 760;
+      text-align: right;
+    }
+
+    .rank-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .rank-table th,
+    .rank-table td {
+      padding: 11px 13px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .rank-table th {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+
+    .rank-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .rank-table td:last-child,
+    .rank-table th:last-child {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .fixture-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .fixture {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .fixture-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      font-weight: 760;
+    }
+
+    .fixture-title span:last-child {
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 650;
+      text-align: right;
+    }
+
+    .split-bar {
+      display: grid;
+      grid-template-columns: var(--left) 1fr;
+      height: 18px;
+      overflow: hidden;
+      border-radius: 8px;
+      background: #e8edf4;
+      border: 1px solid #d9e1eb;
+    }
+
+    .split-left {
+      background: var(--blue);
+    }
+
+    .split-right {
+      background: var(--orange);
+    }
+
+    .fixture-values {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .model-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .model-card h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    .model-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .data-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .data-table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+    }
+
+    .data-table th,
+    .data-table td {
+      padding: 11px 13px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .data-table th {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+
+    .data-table td:not(:first-child),
+    .data-table th:not(:first-child) {
+      text-align: right;
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .footer {
+      padding: 24px 0 40px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 880px) {
+      .topbar .shell,
+      .section-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .navlinks {
+        justify-content: flex-start;
+      }
+
+      h1 {
+        font-size: 2.25rem;
+      }
+
+      .summary-grid,
+      .dashboard-grid,
+      .fixture-grid,
+      .model-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-desc {
+        text-align: left;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        width: min(100% - 22px, 1180px);
+      }
+
+      header {
+        padding-top: 30px;
+      }
+
+      h1 {
+        font-size: 1.86rem;
+      }
+
+      .probability-row {
+        grid-template-columns: 1fr 62px;
+        gap: 8px 12px;
+      }
+
+      .bar-track {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+
+      .probability-value {
+        text-align: right;
+      }
+
+      .rank-table th,
+      .rank-table td {
+        padding: 10px 9px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar" aria-label="Project links">
+    <div class="shell">
+      <div class="brand">
+        <strong>World Cup Prediction</strong>
+        <span>Conditional champion probabilities from the quarterfinals</span>
+      </div>
+      <div class="navlinks">
+        <a href="champion_probabilities.csv">Results CSV</a>
+        <a href="simulate_worldcup.py">Simulation code</a>
+        <a href="main.tex">Paper source</a>
+        <a href="https://github.com/styyyyyyy/Worldcup_Prediction">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <header>
+    <div class="shell">
+      <div class="eyebrow">2026 FIFA World Cup</div>
+      <h1>Spain leads the quarterfinal-stage champion forecast at 25.5%.</h1>
+      <p class="lede">
+        The model estimates each team's chance of winning the tournament,
+        conditional on reaching the quarterfinals, using Poisson goal rates,
+        Elo-driven tie-breaks, and 100,000 Monte Carlo simulations.
+      </p>
+
+      <div class="summary-grid" aria-label="Prediction summary">
+        <article class="metric-card">
+          <div class="metric-label">Favorite</div>
+          <div class="metric-value">Spain</div>
+          <div class="metric-note">25.5% champion probability</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-label">Top two share</div>
+          <div class="metric-value">48.4%</div>
+          <div class="metric-note">Spain plus Argentina</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-label">Simulation runs</div>
+          <div class="metric-value">100k</div>
+          <div class="metric-note">Seed 42, reproducible output</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-label">Data through</div>
+          <div class="metric-value">Jul 7</div>
+          <div class="metric-note">International matches through 2026</div>
+        </article>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section">
+      <div class="shell">
+        <div class="section-head">
+          <h2>Champion Probability Ranking</h2>
+          <p class="section-desc">
+            Probabilities sum to 100% across the eight quarterfinalists.
+          </p>
+        </div>
+
+        <div class="dashboard-grid">
+          <ol class="probability-list" aria-label="Champion probability bar chart">
+            <li class="probability-row" aria-label="Spain, 25.5 percent">
+              <span class="team-name">Spain</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 100%; --bar-color: var(--blue);"></span></span>
+              <span class="probability-value">25.5%</span>
+            </li>
+            <li class="probability-row" aria-label="Argentina, 22.9 percent">
+              <span class="team-name">Argentina</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 89.7%; --bar-color: var(--cyan);"></span></span>
+              <span class="probability-value">22.9%</span>
+            </li>
+            <li class="probability-row" aria-label="England, 14.5 percent">
+              <span class="team-name">England</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 56.8%; --bar-color: var(--green);"></span></span>
+              <span class="probability-value">14.5%</span>
+            </li>
+            <li class="probability-row" aria-label="France, 13.3 percent">
+              <span class="team-name">France</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 52.2%; --bar-color: var(--orange);"></span></span>
+              <span class="probability-value">13.3%</span>
+            </li>
+            <li class="probability-row" aria-label="Morocco, 8.8 percent">
+              <span class="team-name">Morocco</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 34.5%; --bar-color: var(--rose);"></span></span>
+              <span class="probability-value">8.8%</span>
+            </li>
+            <li class="probability-row" aria-label="Norway, 5.9 percent">
+              <span class="team-name">Norway</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 23.0%; --bar-color: var(--gold);"></span></span>
+              <span class="probability-value">5.9%</span>
+            </li>
+            <li class="probability-row" aria-label="Belgium, 4.8 percent">
+              <span class="team-name">Belgium</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 18.8%; --bar-color: #6f7a89;"></span></span>
+              <span class="probability-value">4.8%</span>
+            </li>
+            <li class="probability-row" aria-label="Switzerland, 4.2 percent">
+              <span class="team-name">Switzerland</span>
+              <span class="bar-track"><span class="bar-fill" style="--p: 16.6%; --bar-color: #475569;"></span></span>
+              <span class="probability-value">4.2%</span>
+            </li>
+          </ol>
+
+          <table class="rank-table" aria-label="Champion probabilities table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Team</th>
+                <th>Probability</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>Spain</td><td>25.5%</td></tr>
+              <tr><td>2</td><td>Argentina</td><td>22.9%</td></tr>
+              <tr><td>3</td><td>England</td><td>14.5%</td></tr>
+              <tr><td>4</td><td>France</td><td>13.3%</td></tr>
+              <tr><td>5</td><td>Morocco</td><td>8.8%</td></tr>
+              <tr><td>6</td><td>Norway</td><td>5.9%</td></tr>
+              <tr><td>7</td><td>Belgium</td><td>4.8%</td></tr>
+              <tr><td>8</td><td>Switzerland</td><td>4.2%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-head">
+          <h2>Quarterfinal Advancement</h2>
+          <p class="section-desc">
+            Exact knockout advancement probabilities from the fitted score grid.
+          </p>
+        </div>
+
+        <div class="fixture-grid">
+          <article class="fixture">
+            <div class="fixture-title"><span>France vs Morocco</span><span>QF1</span></div>
+            <div class="split-bar" style="--left: 55.2%;" aria-label="France 55.2 percent, Morocco 44.8 percent">
+              <span class="split-left"></span><span class="split-right"></span>
+            </div>
+            <div class="fixture-values"><span>France 55.2%</span><span>Morocco 44.8%</span></div>
+          </article>
+          <article class="fixture">
+            <div class="fixture-title"><span>Spain vs Belgium</span><span>QF2</span></div>
+            <div class="split-bar" style="--left: 70.6%;" aria-label="Spain 70.6 percent, Belgium 29.4 percent">
+              <span class="split-left"></span><span class="split-right"></span>
+            </div>
+            <div class="fixture-values"><span>Spain 70.6%</span><span>Belgium 29.4%</span></div>
+          </article>
+          <article class="fixture">
+            <div class="fixture-title"><span>Norway vs England</span><span>QF3</span></div>
+            <div class="split-bar" style="--left: 39.2%;" aria-label="Norway 39.2 percent, England 60.8 percent">
+              <span class="split-left"></span><span class="split-right"></span>
+            </div>
+            <div class="fixture-values"><span>Norway 39.2%</span><span>England 60.8%</span></div>
+          </article>
+          <article class="fixture">
+            <div class="fixture-title"><span>Argentina vs Switzerland</span><span>QF4</span></div>
+            <div class="split-bar" style="--left: 69.4%;" aria-label="Argentina 69.4 percent, Switzerland 30.6 percent">
+              <span class="split-left"></span><span class="split-right"></span>
+            </div>
+            <div class="fixture-values"><span>Argentina 69.4%</span><span>Switzerland 30.6%</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-head">
+          <h2>Model Structure</h2>
+          <p class="section-desc">
+            The page summarizes the shipped Python model and archived input data.
+          </p>
+        </div>
+
+        <div class="model-grid">
+          <article class="model-card">
+            <h3>Poisson scoring</h3>
+            <p>Each team gets an expected goal rate from attack, defense, Elo difference, recent form, and rest days.</p>
+          </article>
+          <article class="model-card">
+            <h3>Knockout tie-break</h3>
+            <p>Drawn knockout matches are resolved by a logistic Elo tie-break calibrated from historical shoot-outs.</p>
+          </article>
+          <article class="model-card">
+            <h3>Monte Carlo bracket</h3>
+            <p>The remaining seven matches are simulated 100,000 times to estimate conditional champion probabilities.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-head">
+          <h2>Team Inputs</h2>
+          <p class="section-desc">
+            Covariates from <code>data_template.csv</code>, estimated from archived international match data.
+          </p>
+        </div>
+
+        <div class="data-table-wrap">
+          <table class="data-table" aria-label="Team model inputs">
+            <thead>
+              <tr>
+                <th>Team</th>
+                <th>Elo</th>
+                <th>Attack</th>
+                <th>Defense</th>
+                <th>Form</th>
+                <th>Rest days</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>France</td><td>2206.7</td><td>0.6287</td><td>0.5933</td><td>2.4</td><td>5</td></tr>
+              <tr><td>Morocco</td><td>2056.1</td><td>0.4307</td><td>0.9562</td><td>1.2</td><td>5</td></tr>
+              <tr><td>Spain</td><td>2242.2</td><td>0.7314</td><td>0.7328</td><td>1.8</td><td>4</td></tr>
+              <tr><td>Belgium</td><td>2041.5</td><td>0.6922</td><td>0.5105</td><td>1.6</td><td>4</td></tr>
+              <tr><td>Norway</td><td>2041.8</td><td>0.7619</td><td>0.4811</td><td>0.6</td><td>6</td></tr>
+              <tr><td>England</td><td>2149.8</td><td>0.5915</td><td>0.7722</td><td>1.2</td><td>6</td></tr>
+              <tr><td>Argentina</td><td>2236.4</td><td>0.5830</td><td>0.8125</td><td>1.8</td><td>4</td></tr>
+              <tr><td>Switzerland</td><td>2023.9</td><td>0.6103</td><td>0.5436</td><td>1.2</td><td>4</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      Built from the repository's reproducible model outputs. Data source:
+      martj42/international_results archive through 7 July 2026.
+    </div>
+  </footer>
+</body>
+</html>

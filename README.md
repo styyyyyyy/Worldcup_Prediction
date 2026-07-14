@@ -4,6 +4,11 @@ An Overleaf-ready LaTeX note plus a runnable Python implementation of a
 conditional champion-prediction model for the 2026 FIFA World Cup, given that
 the tournament has reached the quarterfinal stage.
 
+**Dashboard:** [open the prediction dashboard](https://styyyyyyy.github.io/Worldcup_Prediction/)
+or view the static source in [`index.html`](index.html).
+If the dashboard URL is not live yet, enable GitHub Pages from this repository's
+Settings using `main` / root as the source.
+
 **Model in one line:** independent Poisson goals with covariate-driven log-rates
 (attack, defence, Elo, form, rest), a logistic Elo tie-break for drawn knockout
 matches, and Monte Carlo simulation of the remaining seven matches to estimate
@@ -44,6 +49,7 @@ The machine-readable output is saved in
 | `simulate_worldcup.py` | Simulates the remaining bracket and prints/saves champion probabilities |
 | `results.csv` | **Archived raw data**: 49,505 international matches, 1872 → 7 July 2026 |
 | `shootouts.csv` | **Archived raw data**: 681 penalty shoot-outs, 1967–2026 |
+| `index.html` | Static dashboard for GitHub Pages |
 | `README.md` | This file |
 
 Running the simulation additionally generates `champion_probabilities.csv`.
